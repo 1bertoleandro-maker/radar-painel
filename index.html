@@ -68,7 +68,7 @@
         <input id="vipTerm" class="flex-1 border rounded-xl px-3 py-2 text-sm" placeholder="Ex.: Tecnifibre X-One" />
         <label class="flex items-center gap-2 text-sm"><input id="vipHighlight" type="checkbox" checked /> Destacar</label>
         <label class="flex items-center gap-2 text-sm"><input id="vipForce" type="checkbox" checked /> Force Telegram</label>
-        <button id="vipAdd" class="bg-teal-700 text-white rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">Adicionar</button>
+        <button id="vipAdd" class="bg-teal-700 text-white rounded-xl px-4 py-2 text-sm font-semibold">Adicionar</button>
       </div>
       <ul id="vipList" class="space-y-2"></ul>
     </section>
@@ -102,10 +102,10 @@
           <label><input type="checkbox" value="tennis" checked /> Tênis</label>
           <label><input type="checkbox" value="supermercado" checked /> Supermercado</label>
         </div>
-        <button id="emAdd" class="bg-teal-700 text-white rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">Adicionar e-mail</button>
+        <button id="emAdd" class="bg-teal-700 text-white rounded-xl px-4 py-2 text-sm font-semibold">Adicionar e-mail</button>
         <p class="text-xs text-slate-500 mt-2">
-          <strong>Obrigatório:</strong> conecte o PAT primeiro. Ao clicar em Adicionar, grava sozinho no
-          <code>radar-precos</code>. Se der F5 sem estar conectado, some — era só memória do navegador.
+          Primeiro: PAT + <strong>Conectar e carregar</strong> (senão o clique em Adicionar só avisa e não grava).
+          Com conexão, Adicionar grava sozinho no <code>radar-precos</code> e o F5 mantém.
         </p>
         <p id="emListMeta" class="text-xs font-semibold text-teal-800 mt-2"></p>
         <ul id="emList" class="mt-2 space-y-2"></ul>
@@ -121,7 +121,7 @@
           <label><input type="checkbox" value="viagens" checked /> Viagens</label>
           <label><input type="checkbox" value="tennis" checked /> Tênis</label>
         </div>
-        <button id="tgAdd" class="bg-slate-900 text-white rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">Adicionar Telegram</button>
+        <button id="tgAdd" class="bg-slate-900 text-white rounded-xl px-4 py-2 text-sm font-semibold">Adicionar Telegram</button>
         <p id="tgListMeta" class="text-xs font-semibold text-teal-800 mt-2"></p>
         <ul id="tgList" class="mt-2 space-y-2"></ul>
       </div>
@@ -192,7 +192,8 @@ function setEditorsEnabled(enabled) {
 
 function showTokenGate(show) {
   $("tokenGate").classList.toggle("hidden", !show);
-  setEditorsEnabled(!show && isConnected());
+  // Botões ficam clicáveis: sem PAT, o clique pede o token em vez de parecer "quebrado"
+  setEditorsEnabled(true);
 }
 
 /** Decodifica content base64 da GitHub API em UTF-8 (acentos PT-BR). */
@@ -539,8 +540,9 @@ async function saveConfig() {
 async function addAndPersist(mutator, okMsg) {
   if (!token()) {
     showTokenGate(true);
-    setEditorsEnabled(false);
-    setStatus("SEM PAT: o que você digitar some no F5. Cole o token → Conectar e carregar → aí adicione.", false);
+    $("ghToken").focus();
+    setStatus("Cole o GitHub PAT no campo acima e clique em Conectar e carregar. Sem isso não dá para gravar (e some no F5).", false);
+    $("tokenGate").scrollIntoView({ behavior: "smooth", block: "center" });
     return false;
   }
   if (!config) config = defaultConfig();
@@ -621,15 +623,14 @@ $("btnClearToken").onclick = clearToken;
 
 $("ghToken").value = localStorage.getItem(TOKEN_KEY) || "";
 config = defaultConfig();
+setEditorsEnabled(true);
 renderAll();
 if (token()) {
   showTokenGate(false);
-  setEditorsEnabled(false); // libera só depois do loadAll OK
   loadAll();
 } else {
   showTokenGate(true);
-  setEditorsEnabled(false);
-  setStatus("Conecte um PAT → Conectar e carregar. Sem isso, Adicionar fica bloqueado (F5 apagava tudo).", false);
+  setStatus("1º cole o PAT acima → Conectar e carregar. Aí a lista (Paloma, Telegram) aparece e Adicionar grava de verdade.", false);
 }
 </script>
 </body>
