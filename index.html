@@ -17,9 +17,10 @@
       <p class="text-teal-200 text-xs tracking-[0.2em] uppercase font-semibold">GitHub Pages · radar-painel</p>
       <h1 class="text-3xl md:text-4xl font-extrabold mt-1">Radar de Oportunidades</h1>
       <p class="text-slate-300 mt-2 text-sm">
-        Painel público conectado ao repositório privado
-        <code class="text-teal-200">1bertoleandro-maker/radar-precos</code>
-        via GitHub API autenticada.
+        Este site (<strong>radar-painel</strong>) só exibe a tela.
+        E-mails, Telegram, scores e VIP são gravados no repositório privado
+        <code class="text-teal-200">radar-precos/config_panel.json</code>
+        via API (precisa do PAT conectado).
       </p>
     </header>
 
@@ -435,8 +436,9 @@ async function loadAll() {
       return;
     }
 
+    config._loadedFromRemote = true;
     renderAll();
-    setStatus(`Carregado de ${OWNER}/${REPO} (config + ${ (deals.deals || []).length } oportunidades).`);
+    setStatus(`✓ Conectado. Dados lidos de ${OWNER}/${REPO} (config + ${(deals.deals || []).length} oportunidades). Pode editar e-mails — eles gravam sozinhos no radar-precos.`);
   } catch (err) {
     const msg = String(err.message || err);
     if (msg === "TOKEN_REQUIRED" || /401|403|Sem acesso/i.test(msg)) {
@@ -451,24 +453,73 @@ async function saveConfig() {
     saveToken();
     if (!token()) {
       showTokenGate(true);
-      setStatus("Token necessário para salvar no repositório privado.", false);
-      return;
+      setStatus("Conecte o PAT antes. Sem token o e-mail fica só na tela e some ao atualizar a página.", false);
+      return false;
     }
+    if (!config) config = defaultConfig();
     config.schedule = config.schedule || {};
     config.schedule.quiet_start = $("quietStart").value || "23:00";
     config.schedule.quiet_end = $("quietEnd").value || "07:00";
     if (!configSha) {
       const fresh = await ghGet(CONFIG_PATH);
       configSha = fresh.sha;
+      // Mescla com o que já existe no repo se ainda não carregamos
+      try {
+        const remoto = JSON.parse(decodeGitHubBase64(fresh.content));
+        if (!config._loadedFromRemote) {
+          config.email_recipients = config.email_recipients?.length
+            ? config.email_recipients
+            : (remoto.email_recipients || []);
+          config.telegram_targets = config.telegram_targets?.length
+            ? config.telegram_targets
+            : (remoto.telegram_targets || []);
+          config.vip_watchlist = config.vip_watchlist?.length
+            ? config.vip_watchlist
+            : (remoto.vip_watchlist || []);
+          if (remoto.scores) config.scores = { ...remoto.scores, ...config.scores };
+        }
+      } catch (_) { /* ignore */ }
     }
-    const out = await ghPut(CONFIG_PATH, config, configSha);
+    setStatus("Gravando em radar-precos/config_panel.json…");
+    const { _loadedFromRemote, ...paraGravar } = config;
+    const out = await ghPut(CONFIG_PATH, paraGravar, configSha);
     configSha = out.content.sha;
+    config._loadedFromRemote = true;
     const nEmail = (config.email_recipients || []).length;
     const nTg = (config.telegram_targets || []).length;
-    setStatus(`Salvo no GitHub (radar-precos/config_panel.json): ${nEmail} e-mail(s), ${nTg} Telegram. Recarregue com o PAT para confirmar.`);
+    setStatus(`✓ Gravado no repositório privado radar-precos: ${nEmail} e-mail(s), ${nTg} Telegram, ${(config.vip_watchlist || []).length} VIP.`);
+    renderAll();
+    return true;
   } catch (err) {
-    setStatus(String(err.message || err), false);
+    setStatus("Falha ao gravar no radar-precos: " + String(err.message || err), false);
+    return false;
   }
+}
+
+async function addAndPersist(mutator, okMsg) {
+  if (!token()) {
+    showTokenGate(true);
+    setStatus("1) Cole o PAT e clique Conectar e carregar. 2) Depois adicione o e-mail — senão ele se perde.", false);
+    return;
+  }
+  if (!config) config = defaultConfig();
+  // Se ainda não carregou do GitHub, carrega antes de alterar
+  if (!configSha || !config._loadedFromRemote) {
+    setStatus("Carregando config atual do radar-precos antes de gravar…");
+    try {
+      const cfgFile = await ghGet(CONFIG_PATH);
+      configSha = cfgFile.sha;
+      const remoto = JSON.parse(decodeGitHubBase64(cfgFile.content));
+      config = { ...defaultConfig(), ...remoto, _loadedFromRemote: true };
+    } catch (err) {
+      setStatus("Não consegui ler o radar-precos: " + String(err.message || err), false);
+      return;
+    }
+  }
+  mutator(config);
+  renderAll();
+  const ok = await saveConfig();
+  if (ok) setStatus(okMsg, true);
 }
 
 document.querySelectorAll(".tab").forEach((btn) => {
@@ -482,47 +533,40 @@ document.querySelectorAll(".tab").forEach((btn) => {
   });
 });
 
-$("vipAdd").onclick = () => {
+$("vipAdd").onclick = async () => {
   const term = $("vipTerm").value.trim();
   if (!term) return;
-  config.vip_watchlist = config.vip_watchlist || [];
-  config.vip_watchlist.push({
-    term,
-    highlight: $("vipHighlight").checked,
-    force_telegram: $("vipForce").checked,
-  });
+  const highlight = $("vipHighlight").checked;
+  const force_telegram = $("vipForce").checked;
   $("vipTerm").value = "";
-  renderVip();
+  await addAndPersist((cfg) => {
+    cfg.vip_watchlist = cfg.vip_watchlist || [];
+    cfg.vip_watchlist.push({ term, highlight, force_telegram });
+  }, `✓ VIP "${term}" gravado em radar-precos/config_panel.json`);
 };
-$("emAdd").onclick = () => {
+$("emAdd").onclick = async () => {
   const email = $("emEmail").value.trim();
   if (!email) return;
-  config.email_recipients = config.email_recipients || [];
-  config.email_recipients.push({
-    name: $("emName").value.trim() || email,
-    email,
-    categories: catsChecked("emCats"),
-    active: true,
-  });
+  const name = $("emName").value.trim() || email;
+  const categories = catsChecked("emCats");
   $("emName").value = "";
   $("emEmail").value = "";
-  renderEmails();
-  setStatus(`E-mail adicionado à lista (${config.email_recipients.length}). Ainda NÃO está no GitHub — clique em "Salvar no radar-precos".`, true);
+  await addAndPersist((cfg) => {
+    cfg.email_recipients = cfg.email_recipients || [];
+    cfg.email_recipients.push({ name, email, categories, active: true });
+  }, `✓ E-mail ${email} gravado no repositório privado radar-precos.`);
 };
-$("tgAdd").onclick = () => {
+$("tgAdd").onclick = async () => {
   const chat_id = $("tgChat").value.trim();
   if (!chat_id) return;
-  config.telegram_targets = config.telegram_targets || [];
-  config.telegram_targets.push({
-    label: $("tgLabel").value.trim() || "Alvo",
-    chat_id,
-    categories: catsChecked("tgCats"),
-    active: true,
-  });
+  const label = $("tgLabel").value.trim() || "Alvo";
+  const categories = catsChecked("tgCats");
   $("tgLabel").value = "";
   $("tgChat").value = "";
-  renderTg();
-  setStatus(`Telegram adicionado à lista (${config.telegram_targets.length}). Clique em "Salvar no radar-precos" para gravar.`, true);
+  await addAndPersist((cfg) => {
+    cfg.telegram_targets = cfg.telegram_targets || [];
+    cfg.telegram_targets.push({ label, chat_id, categories, active: true });
+  }, `✓ Telegram ${label} (${chat_id}) gravado em radar-precos.`);
 };
 $("dealFilter").onchange = renderDeals;
 $("btnLoad").onclick = loadAll;
