@@ -24,6 +24,7 @@
         <code class="text-teal-200">radar-precos/config_panel.json</code>
         via API (precisa do PAT conectado).
       </p>
+      <p class="text-teal-300/80 text-xs mt-1">painel v2026-03-17c · se a mensagem falar em “Obrigatório: conecte o PAT”, force Ctrl+F5</p>
     </header>
 
     <section id="tokenGate" class="card rounded-2xl p-5 mb-4 shadow-xl border-2 border-amber-300 hidden">
@@ -183,17 +184,8 @@ function isConnected() {
   return Boolean(token() && configSha && config && config._loadedFromRemote);
 }
 
-function setEditorsEnabled(enabled) {
-  ["emAdd", "tgAdd", "vipAdd", "btnSave"].forEach((id) => {
-    const el = $(id);
-    if (el) el.disabled = !enabled;
-  });
-}
-
 function showTokenGate(show) {
   $("tokenGate").classList.toggle("hidden", !show);
-  // Botões ficam clicáveis: sem PAT, o clique pede o token em vez de parecer "quebrado"
-  setEditorsEnabled(true);
 }
 
 /** Decodifica content base64 da GitHub API em UTF-8 (acentos PT-BR). */
@@ -476,7 +468,6 @@ async function loadAll() {
 
     config._loadedFromRemote = true;
     showTokenGate(false);
-    setEditorsEnabled(true);
     renderAll();
     setStatus(`✓ Conectado a ${OWNER}/${REPO}. Adicionar e-mail/Telegram grava sozinho — F5 não apaga.`);
   } catch (err) {
@@ -484,7 +475,6 @@ async function loadAll() {
     if (msg === "TOKEN_REQUIRED" || /401|403|Sem acesso/i.test(msg)) {
       showTokenGate(true);
     }
-    setEditorsEnabled(false);
     setStatus(msg, false);
   }
 }
@@ -554,7 +544,6 @@ async function addAndPersist(mutator, okMsg) {
       configSha = cfgFile.sha;
       const remoto = JSON.parse(decodeGitHubBase64(cfgFile.content));
       config = { ...defaultConfig(), ...remoto, _loadedFromRemote: true };
-      setEditorsEnabled(true);
     } catch (err) {
       setStatus("Não consegui ler o radar-precos: " + String(err.message || err), false);
       return false;
@@ -563,10 +552,7 @@ async function addAndPersist(mutator, okMsg) {
   mutator(config);
   renderAll();
   const ok = await saveConfig();
-  if (ok) {
-    setEditorsEnabled(true);
-    setStatus(okMsg, true);
-  }
+  if (ok) setStatus(okMsg, true);
   return ok;
 }
 
@@ -623,14 +609,13 @@ $("btnClearToken").onclick = clearToken;
 
 $("ghToken").value = localStorage.getItem(TOKEN_KEY) || "";
 config = defaultConfig();
-setEditorsEnabled(true);
 renderAll();
 if (token()) {
   showTokenGate(false);
   loadAll();
 } else {
   showTokenGate(true);
-  setStatus("1º cole o PAT acima → Conectar e carregar. Aí a lista (Paloma, Telegram) aparece e Adicionar grava de verdade.", false);
+  setStatus("1º cole o PAT acima → Conectar e carregar. Aí a lista (Paloma, Telegram) aparece e Adicionar/Salvar funcionam.", false);
 }
 </script>
 </body>
